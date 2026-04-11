@@ -49,24 +49,38 @@ public class PerfMonitorService extends Service {
     }
 
     private void startForegroundService() {
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+
+        // Android 8.0+ 需要通知渠道
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                 "perf_channel", "性能监控",
                 NotificationManager.IMPORTANCE_LOW
             );
-            NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             manager.createNotificationChannel(channel);
         }
 
         Intent intent = new Intent(this, MainActivity.class);
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
 
-        Notification notification = new Notification.Builder(this, "perf_channel")
-            .setContentTitle("性能监控运行中")
-            .setContentText("点击打开")
-            .setSmallIcon(android.R.drawable.ic_menu_info_details)
-            .setContentIntent(pendingIntent)
-            .build();
+        Notification notification;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // Android 8.0+ 使用带 channel ID 的构造函数
+            notification = new Notification.Builder(this, "perf_channel")
+                .setContentTitle("性能监控运行中")
+                .setContentText("点击打开")
+                .setSmallIcon(android.R.drawable.ic_menu_info_details)
+                .setContentIntent(pendingIntent)
+                .build();
+        } else {
+            // Android 7.0 及以下（包括 Android 6）使用单参数构造函数
+            notification = new Notification.Builder(this)
+                .setContentTitle("性能监控运行中")
+                .setContentText("点击打开")
+                .setSmallIcon(android.R.drawable.ic_menu_info_details)
+                .setContentIntent(pendingIntent)
+                .build();
+        }
 
         startForeground(1, notification);
     }
@@ -86,7 +100,7 @@ public class PerfMonitorService extends Service {
         if (Build.VERSION.SDK_INT >= 26) {
             params.type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
         } else {
-            params.type = WindowManager.LayoutParams.TYPE_PHONE;
+            params.type = WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
         }
         params.format = PixelFormat.RGBA_8888;
         params.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
