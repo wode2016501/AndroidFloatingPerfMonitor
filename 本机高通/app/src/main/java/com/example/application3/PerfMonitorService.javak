@@ -41,13 +41,6 @@ public class PerfMonitorService extends Service {
     private float gpuUsage = 0;
     private float fps = 0;
 
-    // 网速相关
-    private long lastRxBytes = -1;
-    private long lastTxBytes = -1;
-    private long lastNetTime = 0;
-    private float downloadSpeed = 0;  // KB/s
-    private float uploadSpeed = 0;    // KB/s
-
     @Override
     public void onCreate() {
         super.onCreate();
@@ -143,93 +136,17 @@ public class PerfMonitorService extends Service {
     }
 
     private void updateAllData() {
-        updateFps();
+        updateFps();      // 使用新的 FPS 读取方法
         updateCpuUsage();
         updateGpuUsage();
-        updateNetworkSpeed();   // 新增网速更新
 
-        // 格式化网速显示（自动切换 KB/s 或 MB/s）
-        String downStr = formatSpeed(downloadSpeed);
-        String upStr = formatSpeed(uploadSpeed);
-
-        String info = String.format("FPS: %.1f", fps) +
+        String info = String.format("FPS: %.1f", fps) + 
             "\nCPU: " + String.format("%.1f", cpuUsage) + "%" +
-            "\nGPU: " + String.format("%.1f", gpuUsage) + "%" +
-            "\n↓: " + downStr + "  ↑: " + upStr;
-
+            "\nGPU: " + String.format("%.1f", gpuUsage) + "%";
         textView.setText(info);
     }
 
-    // 将 KB/s 格式化为 KB/s 或 MB/s
-    private String formatSpeed(float speedKBps) {
-        if (speedKBps < 0) return "0 KB/s";
-        if (speedKBps >= 1024) {
-            return String.format("%.1f MB/s", speedKBps / 1024);
-        } else {
-            return String.format("%.1f KB/s", speedKBps);
-        }
-    }
-
-    // 从 /proc/net/dev 读取所有非 lo 接口的累计收发字节，计算网速
-    private void updateNetworkSpeed() {
-        long totalRx = 0;
-        long totalTx = 0;
-
-        BufferedReader reader = null;
-        try {
-            reader = new BufferedReader(new InputStreamReader(new FileInputStream("/proc/net/dev")));
-            String line;
-            // 跳过前两行标题
-            reader.readLine(); // "Inter-|   Receive..."
-            reader.readLine(); // " face |bytes ..."
-
-            while ((line = reader.readLine()) != null) {
-                line = line.trim();
-                if (line.isEmpty()) continue;
-
-                // 分割接口名和数值，接口名以冒号结尾，例如 "wlan0:"
-                String[] parts = line.split("\\s+");
-                String iface = parts[0].replace(":", "");
-                // 只统计非回环接口
-                if (iface.equals("lo")) continue;
-
-                // 列: 0:iface, 1:rxBytes, 2:rxPackets, ..., 9:txBytes
-                if (parts.length >= 10) {
-                    long rx = Long.parseLong(parts[1]);
-                    long tx = Long.parseLong(parts[9]);
-                    totalRx += rx;
-                    totalTx += tx;
-                }
-            }
-        } catch (Exception e) {
-            downloadSpeed = uploadSpeed = 0;
-            return;
-        } finally {
-            if (reader != null) {
-                try { reader.close(); } catch (IOException e) {}
-            }
-        }
-
-        long now = System.currentTimeMillis();
-        if (lastRxBytes != -1 && lastNetTime != 0) {
-            long deltaTime = now - lastNetTime; // 毫秒
-            if (deltaTime > 0) {
-                float deltaSec = deltaTime / 1000.0f;
-                downloadSpeed = (totalRx - lastRxBytes) / deltaSec / 1024; // KB/s
-                uploadSpeed   = (totalTx - lastTxBytes) / deltaSec / 1024;
-                // 防止短暂负值（网络接口重置时）
-                if (downloadSpeed < 0) downloadSpeed = 0;
-                if (uploadSpeed < 0) uploadSpeed = 0;
-            }
-        } else {
-            downloadSpeed = uploadSpeed = 0;
-        }
-
-        lastRxBytes = totalRx;
-        lastTxBytes = totalTx;
-        lastNetTime = now;
-    }
-
+    // 新增：从 sde-crtc-5 读取 FPS
     private void updateFps() {
         String content = readFile("/sys/class/drm/sde-crtc-0/measured_fps");
         if (content == null || content.trim().isEmpty()) {
@@ -238,6 +155,7 @@ public class PerfMonitorService extends Service {
         }
 
         try {
+            // 解析格式: "fps: 0.0 duration:1000000 frame_count:0"
             String[] parts = content.trim().split("\\s+");
             for (int i = 0; i < parts.length; i++) {
                 if (parts[i].startsWith("fps:")) {
@@ -290,6 +208,7 @@ public class PerfMonitorService extends Service {
     }
 
     private void updateGpuUsage() {
+        // 尝试多个可能的 GPU 使用率读取路径
         String[] gpuPaths = {
             "/sys/kernel/gpu/gpu_busy",
             "/sys/class/kgsl/kgsl-3d0/gpu_busy_percentage",
